@@ -1,4 +1,16 @@
-                    GNU GENERAL PUBLIC LICENSE
+* Introduction
+
+Minrel (or minr.el) is derived from the lojban word "Minra" which whose english definition is "x1 reflects/mirrors/echoes x2 to observer/point as x3. The thought here being that this major mode aims to become a sort of "mirror" into your own psyche.
+
+** Concept
+The main concept which this application revolves around is spaced repetition. For those unfamiliar to SR it can be described as method where a model of human cognition (in this case memory) is used to design a system with which to increase human cognitive performance. It relies on the neuroscientific/psycological fact that any given human memory degrades following a inverse power law. By using the model to compute when the memory degrades to some threshold one can calculate when one should review it. The additional fact which then makes this usefull is that this action or review at an optimal threshold increases the strength of the memory such that it the degrades slower that previously.
+
+This means that if one has a collection of several items whose reviews are scheduled using this model the effort needed to maintain them decreases over time. If one then continiously adds new items at the same speed as the day to day maintenance decreases then one can create an ever growing collection of items which I, in some sense, am guaranteed to remember.
+
+* Licence
+** GPL
+#+begin_src txt :tangle LICENCE
+                      GNU GENERAL PUBLIC LICENSE
                        Version 3, 29 June 2007
 
  Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
@@ -672,3 +684,12 @@ may consider it more useful to permit linking proprietary applications with
 the library.  If this is what you want to do, use the GNU Lesser General
 Public License instead of this License.  But first, please read
 <https://www.gnu.org/licenses/why-not-lgpl.html>.
+#+end_src
+
+* The algorithm
+** Description of algorithm
+
+#+begin_src emacs-lisp
+#+end_src
+
+
