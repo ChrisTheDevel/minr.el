@@ -1,14 +1,24 @@
-* Introduction
-
+* Minr.el
 Minrel (or minr.el) is derived from the lojban word "Minra" which whose english definition is "x1 reflects/mirrors/echoes x2 to observer/point as x3. The thought here being that this major mode aims to become a sort of "mirror" into your own psyche.
 
-** Concept
-The main concept which this application revolves around is spaced repetition. For those unfamiliar to SR it can be described as method where a model of human cognition (in this case memory) is used to design a system with which to increase human cognitive performance. It relies on the neuroscientific/psycological fact that any given human memory degrades following a inverse power law. By using the model to compute when the memory degrades to some threshold one can calculate when one should review it. The additional fact which then makes this usefull is that this action or review at an optimal threshold increases the strength of the memory such that it the degrades slower that previously.
+This is the main litterate programming document for the minr.el package. It aims to provide a feature complete spaced repetition environment with a flexible api for adding new review item definitions and sources. All code is implemented here in this document using the litterate programming paradigm.
 
-This means that if one has a collection of several items whose reviews are scheduled using this model the effort needed to maintain them decreases over time. If one then continiously adds new items at the same speed as the day to day maintenance decreases then one can create an ever growing collection of items which I, in some sense, am guaranteed to remember.
+** What is spaced repetition
+See [[https://en.wikipedia.org/wiki/Spaced_repetition][Spaced Repetition]] on Wikipedia. In short it is a study technique which utilizes facts about human cognition to provide better memorization guarantees. Some model of human memory is used to calculate when the probability of remembering something would fall under some threshold and then schedules a review event then. When some amount of time is allowed to pass before some item is reviewed, the strength of that memory increases faster than if it was review more often (also referred to as the [[https://en.wikipedia.org/wiki/Spacing_effect][Spacing Effect]]).
 
-* Licence
+
+** Why literate document?
+If you've not noticed by now you'll se that this document contains all code and text that otherwise would be included in separate files. My goal here is to bring these otherwise separate files into a unified context were I describe everything fully. I am here forced to use natural language rather than only comments and good style conventions. This text takes the form which makes it most accessible to a human reader rather than the computer.
+
+The system used in this document is [[https://orgmode.org/worg/org-contrib/babel/][org babel mode]].
+
+To tangle the contents I use org-babel-tangle (tangles current buffer) which is bound to C-c C-v t.
+
+** Expected contents of this document
+
+* License
 ** GPL
+to be compatible with the rest of the emacs package ecosystem we licence everything in this project under the GPL license
 #+begin_src txt :tangle LICENCE
                       GNU GENERAL PUBLIC LICENSE
                        Version 3, 29 June 2007
@@ -686,10 +696,160 @@ Public License instead of this License.  But first, please read
 <https://www.gnu.org/licenses/why-not-lgpl.html>.
 #+end_src
 
-* The algorithm
-** Description of algorithm
+it is also good practices to include some licence notice in the header of the file
 
+
+* spaced repetition algorithm
+there are two components of the spaced repetition algorithm:
+1. how we model the degradation of a human memory
+2. how we model the increasing intervals
+
+Here we model human memories simply as a decaying exponential function $p(t) = e^{-ft}$ where f is a forgetting factor.
+
+f is then further expressed as quotient $f = d/m$ betweent he difficulty of the memory/item and the memory strength
+#+name: forgetting-factor
 #+begin_src emacs-lisp
+  (defun minrel-forgetting-factor (d ms)
+    "compute the forgetting factor out of item difficulty and memory strength"
+    (let ((d (float d))
+          (ms (float ms)))
+      (/ d ms)))
+#+end_src
+
+we can quite easily compute for a given f when the exponential should reach a target probability. It is simply computed as the quotient between the log of p and -f.
+
+#+name: compute-interval
+#+begin_src emacs-lisp
+(defun minrel-compute-interval (f p)
+  "compute when exp(-f * t) = p"
+  (let ((f (float f))
+        (p (float p)))
+    (/ (log p) (- f))))
+#+end_src
+
+** constants
+
+since we will be dealing with a lot of arbitrary constants on our code we want to define them such that they may be changed through user configuration. Emacs provides the "defcustom" macro for this use case.
+
+#+name: constants
+#+begin_src emacs-lisp
+(defgroup minrel-sra nil
+  "User customizable options concerning the spaced repetition algorithm of minrel"
+  :tag "Minrel-SRA")
+
+
+(defcustom minrel-default-review-item-interval 2
+  "Default interval between review events"
+  :type 'integer
+  :group 'minrel-sra)
+
+(defcustom minrel-default-review-item-difficulty 10.0
+  "Default difficulty of review item."
+  :type 'float
+  :group 'minrel-sra)
+
+(defcustom minrel-default-review-item-memory-strength 100.0
+  "Default memory strength of review item."
+  :type 'float
+  :group 'minrel-sra)
+
+(defun minrel-forgetting-factor (d ms)
+  "compute the forgetting factor out of item difficulty and memory strength"
+  (let ((d (float d))
+        (ms (float ms)))
+    (/ d ms)))
+
+(defun minrel-compute-interval (f p)
+  "compute when exp(-f * t) = p"
+  (let ((f (float f))
+        (p (float p)))
+    (/ (log p) (- f))))
+#+end_src
+
+** types
+
+
+#+name: types
+#+begin_src emacs-lisp
+  ;;; review-item struct containing parameters used when computing when the next review event should occurs
+(cl-defstruct minrel-review-item
+  (last-review
+   (float-time) ;; set current time as the default last-review
+   :read-only t
+   :type 'real
+   :documentation "float - last review timestamp in unixtime")
+  (interval
+   minrel-default-review-item-interval
+   :read-only t
+   :type 'fixnum
+   :documentation "integer - number of days until next review event")
+  (difficulty
+   minrel-default-review-item-difficulty
+   :read-only t
+   :type 'real
+   :documentation "float - difficulty component in d/ms forgeting factor")
+  (memory-strength
+   minrel-default-review-item-memory-strength
+   :read-only t
+   :type 'real
+   :documentation "float - memory strength component in d/ms forgetting factor"))
+
+;;; we define a type that will represent the results of a review event.
+;;; this is then used to decide whether 
+(cl-deftype minrel-review-result () '(member easy normal hard))
+#+end_src
+
+** Libraries
+emacs lisp has no notion of user defined types. If I want to create some "struct" which only purpose is to contain some specific data in a specific format then I eather have to either maintain some convention based on lists or I'll have to find a library which provides such features. One such library is the "cl-lib" one.
+
+#+name: libraries
+#+begin_src emacs-lisp
+(require 'cl-lib)
 #+end_src
 
 
+** headers
+#+name: elisp-header
+#+begin_src emacs-lisp
+;;; minr.el --- Framework for all your spaced everything needs -*- lexical-binding: t -*-
+
+;;; Header:
+
+;; Maintainer: Christoffer.F.Rinaldo <christhedevel@gmail.com>
+;; Author: Christoffer.F.Rinaldo <christhedevel@gmail.com>
+;; Version: 0.0.1
+;; Package-Requires: ((emacs "28.2))
+;; Keywords: tool
+
+;; URL: https://github.com/ChrisTheDevel/minr.el/issues
+;;
+;; This file is not part of GNU Emacs.
+;;
+;; Copyright (C) 2023 Christoffer.F.Rinaldo
+;;
+;;
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+;;
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+;;
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+;;
+;;
+#+end_src
+** files
+we can now export everything to the relevant files
+#+begin_src emacs-lisp :tangle sm2.el :noweb yes
+  <<elisp-header>>
+  <<libraries>>
+  <<constants>>
+  <<forgetting-factor>>
+  <<compute-interval>>
+  <<types>>  
+#+end_src
